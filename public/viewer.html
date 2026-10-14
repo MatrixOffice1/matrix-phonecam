@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#101113">
+  <title>Matrix PhoneCam · Windows</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main>
+  <header>
+    <div class="mark">M</div>
+    <div><h1>MATRIX <span>PHONECAM</span></h1><p class="sub">Windows · Receptor de cámara</p></div>
+  </header>
+  <section class="panel">
+    <div class="row">
+      <div class="field">
+        <label for="room">Código privado generado en el teléfono</label>
+        <input id="room" placeholder="Pega aquí el código privado" autocomplete="off" autocapitalize="off" spellcheck="false">
+      </div>
+      <button id="connect">Conectar</button>
+      <button id="disconnect" class="secondary" disabled>Desconectar</button>
+    </div>
+    <p id="status" class="status" role="status" aria-live="polite">Introduce el código privado del teléfono. No uses un código compartido públicamente.</p>
+    <span class="pill">WebRTC punto a punto</span>
+    <span class="pill">Vídeo 720p / 1080p / 4K según dispositivo</span>
+  </section>
+  <section class="panel">
+    <video id="remote" autoplay playsinline></video>
+    <p id="video-info" class="hint" aria-live="polite"></p>
+    <p class="hint">Esta página muestra el vídeo en el navegador. No instala ni crea una webcam virtual de Windows.</p>
+  </section>
+  <footer>Matrix PhoneCam · El servidor coordina el emparejamiento; no recibe ni almacena el vídeo.</footer>
+</main>
+<script src="/common.js"></script>
+<script src="/viewer.js"></script>
+</body>
+</html>

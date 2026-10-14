@@ -1,0 +1,12 @@
+.git
+.vscode
+node_modules
+npm-debug.log*
+.env
+.env.*
+certs
+*.pem
+*.key
+*.zip
+test
+README.md

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#101113">
+  <title>Matrix PhoneCam · Teléfono</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main>
+  <header>
+    <div class="mark">M</div>
+    <div><h1>MATRIX <span>PHONECAM</span></h1><p class="sub">Cámara del teléfono · Emisor</p></div>
+  </header>
+  <section class="panel">
+    <div class="field">
+      <label for="room">Código privado de emparejamiento</label>
+      <input id="room" placeholder="Genera un código privado" autocomplete="off" autocapitalize="off" spellcheck="false">
+    </div>
+    <div class="row actions">
+      <button id="generate-code" class="secondary">Generar código privado</button>
+      <button id="copy-code" class="secondary">Copiar código</button>
+    </div>
+    <div class="row settings">
+      <div class="field">
+        <label for="camera">Cámara</label>
+        <select id="camera"><option value="environment">Trasera</option><option value="user">Frontal</option></select>
+      </div>
+      <div class="field">
+        <label for="resolution">Resolución deseada (no garantizada)</label>
+        <select id="resolution">
+          <option value="1280x720">720p · 30 FPS</option>
+          <option value="1920x1080" selected>1080p · 30 FPS (recomendado)</option>
+          <option value="3840x2160">4K · si el navegador y la cámara lo permiten</option>
+        </select>
+      </div>
+    </div>
+    <div class="row actions">
+      <button id="connect">Conectar y activar cámara</button>
+      <button id="stop" class="secondary" disabled>Detener</button>
+    </div>
+    <p id="status" class="status" role="status" aria-live="polite">Genera un código privado, ábrelo también en el ordenador y pulsa conectar.</p>
+    <p id="camera-info" class="hint" aria-live="polite"></p>
+  </section>
+  <section class="panel">
+    <video id="preview" autoplay playsinline muted></video>
+    <p class="hint">Mantén esta página abierta y el teléfono desbloqueado. El vídeo se envía directamente por WebRTC cuando la red lo permite. No publiques el código privado.</p>
+  </section>
+  <footer>Matrix PhoneCam · Cámara y conexión requieren un navegador compatible; HTTPS es obligatorio en el teléfono.</footer>
+</main>
+<script src="/common.js"></script>
+<script src="/phone.js"></script>
+</body>
+</html>

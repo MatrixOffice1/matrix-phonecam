@@ -1,0 +1,19 @@
+{
+  "name": "matrix-phonecam-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Private phone-camera streaming to Windows browsers using WebRTC",
+  "main": "server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test",
+    "check": "node --check server.js && node --check public/common.js && node --check public/phone.js && node --check public/viewer.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
+  }
+}
