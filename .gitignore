@@ -8,3 +8,16 @@ certs/
 npm-debug.log*
 .DS_Store
 Thumbs.db
+/windows-client/node_modules/
+/windows-client/dist/
+/windows-client/release/
+/windows-client/out/
+/windows-client/native/build/
+/windows-client/dist-bridge-candidate/
+/windows-client/**/*.exe
+/windows-client/**/*.dll
+/windows-client/**/*.blockmap
+/windows-client/**/*.pdb
+/windows-client/**/*.obj
+/windows-client/**/*.lib
+/windows-client/**/*.exp

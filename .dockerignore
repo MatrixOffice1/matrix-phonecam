@@ -10,3 +10,14 @@ certs
 *.zip
 test
 README.md
+windows-client
+**/node_modules/
+**/dist/
+**/dist-*/
+**/*.exe
+**/*.dll
+**/*.blockmap
+**/*.pdb
+**/*.obj
+**/*.lib
+**/*.exp

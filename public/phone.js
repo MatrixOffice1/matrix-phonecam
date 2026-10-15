@@ -7,6 +7,10 @@ let iceServers = [];
 let isStopping = false;
 let creatingOffer = false;
 let pendingCandidates = [];
+let activeRoom = null;
+let reconnectTimer = null;
+let reconnectAttempts = 0;
+let iceRestartAttempts = 0;
 
 const preview = qs("preview");
 const connectButton = qs("connect");
@@ -74,15 +78,24 @@ function createPeerConnection() {
   peerConnection.onconnectionstatechange = () => {
     if (!peerConnection) return;
     if (peerConnection.connectionState === "connected") {
+      iceRestartAttempts = 0;
       setStatus("Conectado: vídeo en directo.", "ok");
-    } else if (["failed", "disconnected"].includes(peerConnection.connectionState)) {
-      setStatus("Conexión interrumpida. Comprueba la red o configura un servidor TURN.", "error");
+    } else if (peerConnection.connectionState === "failed") {
+      if (iceRestartAttempts < 2) {
+        iceRestartAttempts += 1;
+        void restartPeerConnection();
+      } else {
+        setStatus("No se pudo restablecer el vídeo. Comprueba la red o la configuración TURN.", "error");
+      }
+    } else if (peerConnection.connectionState === "disconnected") {
+      setStatus("La conexión de vídeo se ha interrumpido; esperando recuperación de la red.");
     }
   };
 }
 
 async function addRemoteCandidate(candidate) {
-  if (!peerConnection || !peerConnection.remoteDescription) {
+  if (!peerConnection || !peerConnection.remoteDescription
+    || peerConnection.signalingState !== "stable") {
     if (pendingCandidates.length >= 256) {
       throw new Error("Se recibieron demasiados candidatos ICE antes de la respuesta. Reinicia el emparejamiento.");
     }
@@ -100,11 +113,13 @@ async function flushRemoteCandidates() {
   }
 }
 
-async function createOffer() {
-  if (creatingOffer || !peerConnection || peerConnection.localDescription) return;
+async function createOffer(options = {}) {
+  if (creatingOffer || !peerConnection
+    || (peerConnection.localDescription && !options.iceRestart)
+    || peerConnection.signalingState !== "stable") return;
   creatingOffer = true;
   try {
-    const offer = await peerConnection.createOffer();
+    const offer = await peerConnection.createOffer(options);
     await peerConnection.setLocalDescription(offer);
     sendSignal(socket, { type: "offer", sdp: peerConnection.localDescription });
     setStatus("Negociando la conexión de vídeo…");
@@ -113,8 +128,26 @@ async function createOffer() {
   }
 }
 
+async function restartPeerConnection() {
+  const currentConnection = peerConnection;
+  if (!currentConnection || creatingOffer
+    || !socket || socket.readyState !== WebSocket.OPEN) {
+    setStatus("El vídeo se interrumpió. Esperando que vuelva la señalización y la red.", "error");
+    return;
+  }
+
+  setStatus(`Intentando restablecer el vídeo (${iceRestartAttempts}/2)…`);
+  try {
+    await createOffer({ iceRestart: true });
+  } catch (error) {
+    console.error("ICE restart failed:", error);
+    setStatus("No se pudo reiniciar ICE. Comprueba la conexión o el servidor TURN.", "error");
+  }
+}
+
 async function handleSignal(message) {
   if (message.type === "joined") {
+    reconnectAttempts = 0;
     const track = localStream.getVideoTracks()[0];
     const settings = track.getSettings();
     const width = settings.width || 0;
@@ -150,6 +183,15 @@ async function handleSignal(message) {
     await addRemoteCandidate(message.candidate || null);
     return;
   }
+  if (message.type === "restart") {
+    if (iceRestartAttempts < 2) {
+      iceRestartAttempts += 1;
+      await restartPeerConnection();
+    } else {
+      setStatus("No se pudo restablecer el vídeo. Comprueba la red o la configuración TURN.", "error");
+    }
+    return;
+  }
   if (message.type === "hangup") {
     closePeerConnection();
     setStatus("El ordenador ha detenido el vídeo. Esperando reconexión…");
@@ -168,14 +210,42 @@ function releaseCamera() {
   qs("camera-info").textContent = "";
 }
 
-function finishConnection(closedSocket) {
+async function connectToRoom() {
+  if (isStopping || !activeRoom || socket) return;
+  try {
+    iceServers = await loadIceServers();
+    if (isStopping || !activeRoom || socket) return;
+    createPeerConnection();
+    socket = connectSignaling(activeRoom, "phone", handleSignal, finishConnection);
+  } catch (error) {
+    if (isStopping || !activeRoom) return;
+    console.error("Phone signaling setup failed:", error);
+    const delay = reconnectDelay(reconnectAttempts++);
+    setStatus(`${error.message || "No se pudo conectar al servidor."} Se reintentará en ${Math.ceil(delay / 1000)} s.`, "error");
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(connectToRoom, delay);
+  }
+}
+
+function finishConnection(closedSocket, event) {
   if (socket !== closedSocket) return;
   socket = null;
   closePeerConnection();
-  releaseCamera();
-  connectButton.disabled = false;
-  stopButton.disabled = true;
-  if (!isStopping) setStatus("Conexión cerrada. Puedes volver a emparejar el teléfono.");
+  if (isStopping) return;
+  if (event.code === 1008) {
+    releaseCamera();
+    activeRoom = null;
+    connectButton.disabled = false;
+    qs("generate-code").disabled = false;
+    qs("copy-code").disabled = false;
+    stopButton.disabled = true;
+    setStatus("No se pudo emparejar. Comprueba el código privado y que no haya otra cámara conectada.", "error");
+    return;
+  }
+  const delay = reconnectDelay(reconnectAttempts++);
+  setStatus(`Se perdió la señalización. Reconectando en ${Math.ceil(delay / 1000)} s…`);
+  clearTimeout(reconnectTimer);
+  reconnectTimer = setTimeout(connectToRoom, delay);
 }
 
 async function start() {
@@ -190,6 +260,8 @@ async function start() {
   }
 
   isStopping = false;
+  activeRoom = room;
+  reconnectAttempts = 0;
   connectButton.disabled = true;
   qs("generate-code").disabled = true;
   qs("copy-code").disabled = true;
@@ -198,12 +270,12 @@ async function start() {
   try {
     localStream = await captureCamera();
     preview.srcObject = localStream;
-    iceServers = await loadIceServers();
-    createPeerConnection();
-    socket = connectSignaling(room, "phone", handleSignal, finishConnection);
     stopButton.disabled = false;
+    connectToRoom();
   } catch (error) {
     console.error("Phone camera setup failed:", error);
+    isStopping = true;
+    activeRoom = null;
     releaseCamera();
     closePeerConnection();
     connectButton.disabled = false;
@@ -222,8 +294,11 @@ async function start() {
 }
 
 function stop() {
+  isStopping = true;
+  activeRoom = null;
+  clearTimeout(reconnectTimer);
+  reconnectTimer = null;
   if (socket) {
-    isStopping = true;
     sendSignal(socket, { type: "hangup" });
     const currentSocket = socket;
     socket = null;

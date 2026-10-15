@@ -181,6 +181,13 @@ test("relays valid WebRTC messages only between paired roles", async () => {
   const receivedAnswer = nextMessage(phone, "answer");
   viewer.send(JSON.stringify(answer));
   assert.deepEqual(await receivedAnswer, answer);
+
+  const receivedRestart = nextMessage(phone, "restart");
+  viewer.send(JSON.stringify({ type: "restart" }));
+  assert.deepEqual(await receivedRestart, { type: "restart" });
+  const invalidRestart = nextMessage(phone, "error");
+  phone.send(JSON.stringify({ type: "restart" }));
+  assert.equal((await invalidRestart).code, "invalid_signal");
 });
 
 test("isolates different private codes and rejects cross-origin WebSockets", async () => {

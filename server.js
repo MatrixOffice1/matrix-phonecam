@@ -11,6 +11,7 @@ const MAX_MESSAGE_BYTES = 256 * 1024;
 const MAX_ROOM_LENGTH = 128;
 const ROOM_CODE_PATTERN = /^[A-Za-z0-9_-]{22,128}$/;
 const DEFAULT_STUN_URLS = ["stun:stun.l.google.com:19302"];
+const HEARTBEAT_INTERVAL_MS = 30_000;
 
 function parseList(value, fallback) {
   if (value === undefined || value === null) return fallback;
@@ -97,6 +98,7 @@ function rejectJoin(socket, code) {
 }
 
 function validSignalMessage(socket, message) {
+  if (message.type === "restart") return socket.role === "viewer";
   if (message.type === "hangup") return true;
 
   if (message.type === "offer" || message.type === "answer") {
@@ -150,6 +152,18 @@ function createServer(options = {}) {
     maxPayload: MAX_MESSAGE_BYTES,
   });
   const rooms = new Map();
+  const heartbeat = setInterval(() => {
+    for (const socket of wss.clients) {
+      if (socket.isAlive === false) {
+        socket.terminate();
+        continue;
+      }
+      socket.isAlive = false;
+      socket.ping();
+    }
+  }, HEARTBEAT_INTERVAL_MS);
+  heartbeat.unref();
+  server.once("close", () => clearInterval(heartbeat));
 
   server.on("upgrade", (request, socket, head) => {
     let pathname;
@@ -174,6 +188,8 @@ function createServer(options = {}) {
   wss.on("connection", (socket) => {
     socket.role = null;
     socket.room = null;
+    socket.isAlive = true;
+    socket.on("pong", () => { socket.isAlive = true; });
     send(socket, { type: "server-ready" });
 
     socket.on("message", (raw, isBinary) => {
@@ -245,7 +261,7 @@ function createServer(options = {}) {
         return;
       }
       if (!peer) {
-        if (message.type === "offer" || message.type === "answer") {
+        if (message.type === "offer" || message.type === "answer" || message.type === "restart") {
           sendError(socket, "peer_not_connected");
         }
         return;

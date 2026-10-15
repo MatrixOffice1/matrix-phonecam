@@ -81,10 +81,14 @@ function listenForMessages(socket, handler, onClose) {
       });
   });
 
-  socket.addEventListener("close", onClose);
+  socket.addEventListener("close", (event) => onClose(socket, event));
   socket.addEventListener("error", () => {
     setStatus("No se pudo conectar al servidor. Comprueba HTTPS, el dominio y WebSockets.", "error");
   });
+}
+
+function reconnectDelay(attempt) {
+  return Math.min(30_000, 1_000 * (2 ** Math.min(attempt, 5)));
 }
 
 function connectSignaling(room, role, onMessage, onClose) {
@@ -98,7 +102,7 @@ function connectSignaling(room, role, onMessage, onClose) {
       return;
     }
     await onMessage(message);
-  }, () => onClose(socket));
+  }, (closedSocket, event) => onClose(closedSocket, event));
 
   return socket;
 }

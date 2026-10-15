@@ -5,6 +5,10 @@ let peerConnection = null;
 let iceServers = [];
 let pendingCandidates = [];
 let isDisconnecting = false;
+let activeRoom = null;
+let reconnectTimer = null;
+let reconnectAttempts = 0;
+let iceRestartRequests = 0;
 
 const remote = qs("remote");
 const connectButton = qs("connect");
@@ -33,9 +37,18 @@ function createPeerConnection() {
   peerConnection.onconnectionstatechange = () => {
     if (!peerConnection) return;
     if (peerConnection.connectionState === "connected") {
+      iceRestartRequests = 0;
       setStatus("Conectado: vídeo en directo.", "ok");
-    } else if (["failed", "disconnected"].includes(peerConnection.connectionState)) {
-      setStatus("Conexión interrumpida. Comprueba la red o configura un servidor TURN.", "error");
+    } else if (peerConnection.connectionState === "failed") {
+      if (iceRestartRequests < 2 && socket?.readyState === WebSocket.OPEN) {
+        iceRestartRequests += 1;
+        sendSignal(socket, { type: "restart" });
+        setStatus(`Solicitando recuperar el vídeo (${iceRestartRequests}/2)…`);
+      } else {
+        setStatus("No se pudo restablecer el vídeo. Comprueba la red o configura un servidor TURN.", "error");
+      }
+    } else if (peerConnection.connectionState === "disconnected") {
+      setStatus("La conexión de vídeo se ha interrumpido; esperando recuperación de la red.");
     }
   };
 }
@@ -61,6 +74,7 @@ async function flushRemoteCandidates() {
 
 async function handleSignal(message) {
   if (message.type === "joined") {
+    reconnectAttempts = 0;
     setStatus("Esperando a la cámara del teléfono…");
     return;
   }
@@ -98,39 +112,61 @@ async function handleSignal(message) {
   }
 }
 
-function finishConnection(closedSocket) {
+function finishConnection(closedSocket, event) {
   if (socket !== closedSocket) return;
   socket = null;
   closePeerConnection();
-  connectButton.disabled = false;
-  disconnectButton.disabled = true;
-  if (!isDisconnecting) setStatus("Conexión cerrada. Pulsa Conectar para volver a emparejar.");
+  if (isDisconnecting) return;
+  if (event.code === 1008) {
+    activeRoom = null;
+    connectButton.disabled = false;
+    disconnectButton.disabled = true;
+    setStatus("No se pudo emparejar. Comprueba el código privado y que no haya otro receptor conectado.", "error");
+    return;
+  }
+  const delay = reconnectDelay(reconnectAttempts++);
+  setStatus(`Se perdió la señalización. Reconectando en ${Math.ceil(delay / 1000)} s…`);
+  clearTimeout(reconnectTimer);
+  reconnectTimer = setTimeout(connectToRoom, delay);
 }
 
-async function connect() {
+async function connectToRoom() {
+  if (isDisconnecting || !activeRoom || socket) return;
+  connectButton.disabled = true;
+  disconnectButton.disabled = false;
+  try {
+    iceServers = await loadIceServers();
+    if (isDisconnecting || !activeRoom) return;
+    socket = connectSignaling(activeRoom, "viewer", handleSignal, finishConnection);
+    disconnectButton.disabled = false;
+  } catch (error) {
+    if (isDisconnecting || !activeRoom) return;
+    console.error("Viewer setup failed:", error);
+    const delay = reconnectDelay(reconnectAttempts++);
+    setStatus(`${error.message || "No se pudo conectar al servidor."} Se reintentará en ${Math.ceil(delay / 1000)} s.`, "error");
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(connectToRoom, delay);
+  }
+}
+
+function connect() {
   const room = getRoom();
   if (!hasValidRoom(room)) {
     setStatus("Introduce el código privado generado en el teléfono (mínimo 22 caracteres).", "error");
     return;
   }
+  activeRoom = room;
   isDisconnecting = false;
-  connectButton.disabled = true;
-  disconnectButton.disabled = true;
-  try {
-    iceServers = await loadIceServers();
-    socket = connectSignaling(room, "viewer", handleSignal, finishConnection);
-    disconnectButton.disabled = false;
-  } catch (error) {
-    console.error("Viewer setup failed:", error);
-    connectButton.disabled = false;
-    disconnectButton.disabled = true;
-    setStatus(error.message || "No se pudo conectar al servidor.", "error");
-  }
+  reconnectAttempts = 0;
+  connectToRoom();
 }
 
 function disconnect() {
+  isDisconnecting = true;
+  activeRoom = null;
+  clearTimeout(reconnectTimer);
+  reconnectTimer = null;
   if (socket) {
-    isDisconnecting = true;
     sendSignal(socket, { type: "hangup" });
     const currentSocket = socket;
     socket = null;
